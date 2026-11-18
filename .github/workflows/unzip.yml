@@ -1,0 +1,51 @@
+name: Extract BIO-D Sales
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract application
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+
+          with zipfile.ZipFile("BIO-D-Sales-v1.zip") as archive:
+              for item in archive.infolist():
+                  path = Path(item.filename)
+                  parts = path.parts
+
+                  if parts and parts[0] == "BIO-D-Sales":
+                      parts = parts[1:]
+
+                  if not parts or item.is_dir():
+                      continue
+
+                  target = Path(*parts)
+                  if target.is_absolute() or ".." in target.parts:
+                      raise ValueError("Invalid archive path")
+
+                  if target.parts[0] == ".github":
+                      continue
+
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  target.write_bytes(archive.read(item))
+          PY
+
+      - name: Save extracted files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist README.md
+          if ! git diff --cached --quiet; then
+            git commit -m "Extract BIO-D Sales application"
+            git push
+          fi
