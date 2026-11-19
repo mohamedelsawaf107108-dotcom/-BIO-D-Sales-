@@ -1,51 +1,61 @@
-name: Extract BIO-D Sales
+name: Publish BIO-D Sales
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
-  extract:
+  deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Extract application
+      - name: Prepare application
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import zipfile
 
+          output = Path("_site")
+          prefix = "BIO-D-Sales/dist/"
+
           with zipfile.ZipFile("BIO-D-Sales-v1.zip") as archive:
               for item in archive.infolist():
-                  path = Path(item.filename)
-                  parts = path.parts
-
-                  if parts and parts[0] == "BIO-D-Sales":
-                      parts = parts[1:]
-
-                  if not parts or item.is_dir():
+                  if item.is_dir() or not item.filename.startswith(prefix):
                       continue
 
-                  target = Path(*parts)
-                  if target.is_absolute() or ".." in target.parts:
+                  relative = Path(item.filename[len(prefix):])
+                  if relative.is_absolute() or ".." in relative.parts:
                       raise ValueError("Invalid archive path")
 
-                  if target.parts[0] == ".github":
-                      continue
-
+                  target = output / relative
                   target.parent.mkdir(parents=True, exist_ok=True)
                   target.write_bytes(archive.read(item))
+
+          if not (output / "index.html").is_file():
+              raise FileNotFoundError("Application index.html is missing")
           PY
 
-      - name: Save extracted files
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add dist README.md
-          if ! git diff --cached --quiet; then
-            git commit -m "Extract BIO-D Sales application"
-            git push
-          fi
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+      - name: Deploy application
+        id: deployment
+        uses: actions/deploy-pages@v4
